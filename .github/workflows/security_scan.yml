@@ -1,0 +1,45 @@
+name: Container Security Scan & Enforce Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scan-and-enforce:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # for SARIF upload if needed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (for scanning)
+        run: |
+          docker build -t myapp:${{ github.sha }} .
+
+      - name: Run Trivy image + config scan (fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:${{ github.sha }}'
+          format: 'table'               # or 'sarif' for GitHub security tab
+          output: 'trivy-report.txt'
+          exit-code: '1'                # fail build on findings
+          ignore-unfixed: true          # ignore unfixed/vulnerable but patched upstream
+          vuln-type: 'os,library'       # scan OS pkgs + language libs
+          scanners: 'vuln,config,secret' # vuln + misconfig + secret scanning
+          severity: 'CRITICAL,HIGH'     # fail only on these severities
+          timeout: '10m'
+
+      - name: Upload Trivy scan results (optional - for visibility)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.txt
